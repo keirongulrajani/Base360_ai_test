@@ -1,22 +1,34 @@
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from decimal import Decimal
-from typing import Dict, Any, List
+from typing import Dict, Any
+from zoneinfo import ZoneInfo
 
 logger = logging.getLogger(__name__)
 
-async def calculate_monthly_revenue(property_id: str, month: int, year: int, db_session=None) -> Decimal:
+def month_bounds_utc(
+    year: int, month: int, property_timezone: str
+) -> tuple[datetime, datetime]:
+    local_zone = ZoneInfo(property_timezone)
+    next_year = year + 1 if month == 12 else year
+    next_month = 1 if month == 12 else month + 1
+
+    start_local = datetime(year, month, 1, tzinfo=local_zone)
+    end_local = datetime(next_year, next_month, 1, tzinfo=local_zone)
+
+    return start_local.astimezone(timezone.utc), end_local.astimezone(timezone.utc)
+
+async def calculate_monthly_revenue(property_id: str, tenant_id: str, month: int, year: int, property_timezone: str, db_session=None) -> Decimal:
     """
     Calculates revenue for a specific month.
     """
 
-    start_date = datetime(year, month, 1)
-    if month < 12:
-        end_date = datetime(year, month + 1, 1)
-    else:
-        end_date = datetime(year + 1, 1, 1)
-        
-    print(f"DEBUG: Querying revenue for {property_id} from {start_date} to {end_date}")
+    start_utc, end_utc = month_bounds_utc(year, month, property_timezone)
+
+    logger.debug(
+        f"Querying revenue for {property_id} (tenant: {tenant_id}) "
+        f"from {start_utc} to {end_utc}"
+    )
 
     # SQL Simulation (This would be executed against the actual DB)
     query = """
@@ -29,7 +41,7 @@ async def calculate_monthly_revenue(property_id: str, month: int, year: int, db_
     """
     
     # In production this query executes against a database session.
-    # result = await db.fetch_val(query, property_id, tenant_id, start_date, end_date)
+    # result = await db.fetch_val(query, property_id, tenant_id, start_utc, end_utc)
     # return result or Decimal('0')
     
     return Decimal('0') # Placeholder for now until DB connection is finalized
@@ -98,7 +110,7 @@ async def calculate_total_revenue(property_id: str, tenant_id: str) -> Dict[str,
         else:
             raise Exception("Database pool not available")
             
-    except Exception as e:
+    except Exception:
         logger.exception(
             f"Revenue query failed for {property_id} (tenant: {tenant_id})"
         )
